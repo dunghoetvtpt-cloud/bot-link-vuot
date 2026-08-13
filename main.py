@@ -8,13 +8,15 @@ from flask import Flask, render_template_string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- CẤU HÌNH API & ID VIP ---
+# --- CẤU HÌNH API & MẬT KHẨU KÍCH HOẠT VIP QUA LINK ---
 TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-ADMIN_VIP_ID = 8726403940  # ID VIP chính xác của bạn
+ADMIN_VIP_ID = 8726403940  # ID Admin chính của bạn để dùng lệnh bật/tắt bot
+VIP_ACTIVATION_SECRET = "kichhoatvip999"  # Mã bật/tắt trạng thái VIP qua link
 
 USER_DB = {}
 VALID_LINKS = {}
+BOT_STATUS = {"is_active": True}  # Trạng thái bật/tắt bot (True: Hoạt động, False: Đang tắt/bảo trì)
 
 # --- CẤU HÌNH HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
@@ -50,11 +52,12 @@ def get_user(user_id):
     now = datetime.now().date()
     if user_id not in USER_DB:
         USER_DB[user_id] = {
-            "balance": 1000.0, 
+            "balance": 0.0, 
+            "is_vip": False, 
             "links_today": 0, 
             "last_link_date": now, 
             "bank_info": None, 
-            "bank_changes_left": 3, # Giới hạn đổi ngân hàng 3 lần
+            "bank_changes_left": 3, 
             "farm": {"seed_id": None, "plant_time": None, "ripe_time": None, "steal_time": None}
         }
     if USER_DB[user_id]["last_link_date"] != now:
@@ -71,8 +74,28 @@ def get_main_menu(balance):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- CÁC LỆNH BẬT / TẮT BOT DÀNH CHO ADMIN ---
+async def offbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_VIP_ID:
+        return
+    BOT_STATUS["is_active"] = False
+    await update.message.reply_text("🔴 **Đã TẮT (Off) bot thành công!** Bot tạm thời không tiếp nhận yêu cầu từ người dùng.", parse_mode="Markdown")
+
+async def onbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_VIP_ID:
+        return
+    BOT_STATUS["is_active"] = True
+    await update.message.reply_text("🟢 **Đã BẬT (On) bot thành công!** Hệ thống hoạt động bình thường trở lại.", parse_mode="Markdown")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.effective_user.id)
+    user_id = update.effective_user.id
+    # Nếu bot đang tắt và người dùng không phải Admin thì chặn
+    if not BOT_STATUS["is_active"] and user_id != ADMIN_VIP_ID:
+        if update.message:
+            await update.message.reply_text("🛠️ **Hệ thống đang bảo trì tạm thời!** Vui lòng quay lại sau.", parse_mode="Markdown")
+        return
+
+    user = get_user(user_id)
     text = "🤖 **Hệ thống TK Kim Kiếm đã sẵn sàng!**\nChọn tính năng bên dưới:"
     if update.message:
         await update.message.reply_text(text, reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
@@ -80,9 +103,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.message.edit_text(text, reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not BOT_STATUS["is_active"] and user_id != ADMIN_VIP_ID:
+        await update.callback_query.answer("🛠️ Hệ thống đang bảo trì!", show_alert=True)
+        return
+
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
     user = get_user(user_id)
     data = query.data
 
@@ -92,9 +119,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- QUẢN LÝ VÍ & NGÂN HÀNG ---
     elif data == "my_wallet":
         bank_text = f"`{user['bank_info']}`" if user["bank_info"] else "Chưa liên kết"
+        vip_status = "👑 Đang bật (Bất tử)" if user["is_vip"] else "🔒 Thường"
         text = (
             f"👛 **QUẢN LÝ VÍ CỦA TÔI**\n\n"
             f"💵 Số dư: **{user['balance']:,.0f} VNĐ**\n"
+            f"👑 Trạng thái VIP: **{vip_status}**\n"
             f"🏦 Tài khoản ngân hàng: {bank_text}\n"
             f"🔄 Số lần đổi ngân hàng còn lại: **{user['bank_changes_left']}/3**\n\n"
             f"⚠️ *Lưu ý: Tối thiểu rút 100.000đ và chỉ đổi ngân hàng tối đa 3 lần.*"
@@ -151,6 +180,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Cược 200đ", callback_data="mine_bet_200"), InlineKeyboardButton("Cược 500đ", callback_data="mine_bet_500")],
                 [InlineKeyboardButton("Cược 1,000đ", callback_data="mine_bet_1000"), InlineKeyboardButton("Cược 2,000đ", callback_data="mine_bet_2000")],
+                [InlineKeyboardButton("Cược 10,000đ", callback_data="mine_bet_10000"), InlineKeyboardButton("Cược 20,000đ", callback_data="mine_bet_20000")],
                 [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
             ])
         )
@@ -158,10 +188,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("mine_bet_"):
         bet = int(data.split("_")[2])
         if user["balance"] < bet:
-            await query.answer("❌ Số dư không đủ!", show_alert=True)
+            await query.answer("❌ Số dư không đủ! Hãy đi kiếm tiền trước nhé.", show_alert=True)
             return
         user["balance"] -= bet
-        user["mine_game"] = {"bet": bet, "opened": 0, "multiplier": 1.0, "grid": ["?"] * 9}
+        
+        safe_count = random.randint(3, 5)
+        user["mine_game"] = {
+            "bet": bet, 
+            "opened": 0, 
+            "multiplier": 1.0, 
+            "grid": ["?"] * 9,
+            "safe_clicks_left": safe_count
+        }
         
         kb = [
             [InlineKeyboardButton("❓", callback_data="mine_pick_0"), InlineKeyboardButton("❓", callback_data="mine_pick_1"), InlineKeyboardButton("❓", callback_data="mine_pick_2")],
@@ -170,7 +208,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("« Thoát", callback_data="play_mine")]
         ]
         await query.edit_message_text(
-            f"💣 **Dò Mìn · Đang chơi**\n🪙 Cược: **{bet}đ**\nĐã mở: **0 / 8 💎**\nHệ số: **1.0x**",
+            f"💣 **Dò Mìn · Đang chơi**\n🪙 Cược: **{bet:,.0f}đ**\nĐã mở: **0 / 8 💎**\nHệ số: **1.0x**",
             reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
         )
 
@@ -184,8 +222,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ô này đã mở rồi!", show_alert=True)
             return
 
-        # Logic VIP (ID 8726403940 không bao giờ nổ mìn)
-        is_exploded = False if user_id == ADMIN_VIP_ID else (random.random() < 0.25)
+        if user["is_vip"]:
+            is_exploded = False 
+        else:
+            if game["safe_clicks_left"] > 0:
+                game["safe_clicks_left"] -= 1
+                is_exploded = False
+            else:
+                if game["opened"] == 7:  
+                    is_exploded = (random.random() < 0.999)
+                else:
+                    is_exploded = (random.randint(1, 8) == 1)
 
         if is_exploded:
             game["grid"][idx] = "💥"
@@ -206,17 +253,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if game["opened"] >= 8:
                 user["balance"] += prize
                 del user["mine_game"]
-                await query.edit_message_text(f"🏆 **Thắng lớn! Vượt 8 ô kim cương nhận +{prize}đ**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="menu")]]))
+                await query.edit_message_text(f"🏆 **Thắng lớn! Vượt 8 ô kim cương nhận +{prize:,.0f}đ**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="menu")]]))
             else:
                 kb = [
                     [InlineKeyboardButton(game["grid"][0], callback_data="mine_pick_0"), InlineKeyboardButton(game["grid"][1], callback_data="mine_pick_1"), InlineKeyboardButton(game["grid"][2], callback_data="mine_pick_2")],
                     [InlineKeyboardButton(game["grid"][3], callback_data="mine_pick_3"), InlineKeyboardButton(game["grid"][4], callback_data="mine_pick_4"), InlineKeyboardButton(game["grid"][5], callback_data="mine_pick_5")],
                     [InlineKeyboardButton(game["grid"][6], callback_data="mine_pick_6"), InlineKeyboardButton(game["grid"][7], callback_data="mine_pick_7"), InlineKeyboardButton(game["grid"][8], callback_data="mine_pick_8")],
-                    [InlineKeyboardButton(f"💰 Rút ngay ({prize}đ)", callback_data="mine_cashout")],
+                    [InlineKeyboardButton(f"💰 Rút ngay ({prize:,.0f}đ)", callback_data="mine_cashout")],
                     [InlineKeyboardButton("« Thoát", callback_data="play_mine")]
                 ]
                 await query.edit_message_text(
-                    f"💣 **Dò Mìn · Đang chơi**\nĐã mở: **{game['opened']}/8 💎**\nHệ số: **{game['multiplier']}x**\nRút được: **{prize}đ**",
+                    f"💣 **Dò Mìn · Đang chơi**\nĐã mở: **{game['opened']}/8 💎**\nHệ số: **{game['multiplier']}x**\nRút được: **{prize:,.0f}đ**",
                     reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
                 )
 
@@ -226,13 +273,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prize = int(user["mine_game"]["bet"] * user["mine_game"]["multiplier"])
         user["balance"] += prize
         del user["mine_game"]
-        await query.edit_message_text(f"🎉 **Rút tiền thành công!** +{prize}đ\nSố dư: {user['balance']:,.0f}đ", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
+        await query.edit_message_text(f"🎉 **Rút tiền thành công!** +{prize:,.0f}đ\nSố dư: {user['balance']:,.0f}đ", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
 
     elif data in ["none", "balance_info"]:
         await query.answer("Tính năng đang hoạt động!", show_alert=False)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.effective_user.id)
+    user_id = update.effective_user.id
+    if not BOT_STATUS["is_active"] and user_id != ADMIN_VIP_ID:
+        return
+
+    user = get_user(user_id)
     text = update.message.text.strip()
 
     if context.user_data.get("waiting_for_withdraw"):
@@ -260,10 +311,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get("waiting_for_code"):
         context.user_data["waiting_for_code"] = False
+        
+        # --- Bật/Tắt trạng thái VIP qua link ---
+        if text == VIP_ACTIVATION_SECRET:
+            user["is_vip"] = not user["is_vip"] 
+            status_str = "KÍCH HOẠT THÀNH CÔNG (Bất tử)" if user["is_vip"] else "ĐÃ TẮT VIP"
+            await update.message.reply_text(f"👑 Trạng thái VIP của bạn đã thay đổi: **{status_str}**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
+            return
+
+        # --- Nâng giá trị mã dungvip12 lên 10.000đ ---
         if text.lower() == "dungvip12":
-            user["balance"] += 300
-            await update.message.reply_text("👑 Nhập mã VIP thành công! +300đ", reply_markup=get_main_menu(user["balance"]))
-        elif text in VALID_LINKS:
+            user["balance"] += 10000
+            await update.message.reply_text("👑 Nhập mã VIP `dungvip12` thành công! **+10.000 VNĐ**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
+            return
+
+        if text in VALID_LINKS:
             del VALID_LINKS[text]
             user["balance"] += 500
             user["links_today"] += 1
@@ -275,7 +337,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("waiting_for_bank"):
         context.user_data["waiting_for_bank"] = False
         user["bank_info"] = text
-        user["bank_changes_left"] -= 1  # Trừ lượt đổi
+        user["bank_changes_left"] -= 1  
         await update.message.reply_text(
             f"✅ **Đã liên kết ngân hàng thành công!**\n\n"
             f"🏦 Thông tin: `{text}`\n"
@@ -288,8 +350,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000), daemon=True).start()
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Đăng ký các lệnh
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("offbot", offbot_command))
+    application.add_handler(CommandHandler("onbot", onbot_command))
+    
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling()
-    
+        
