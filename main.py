@@ -11,7 +11,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- CẤU HÌNH API & LINK4M TOKEN ---
 TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
 
-# 2 Token Link4M của bạn (2 lượt đầu dùng token 1, 2 lượt sau dùng token 2)
 LINK4M_TOKENS = [
     "68a76c1354de3f0da567ca17",  # Token 1
     "6a7e4f3993203b217d199b6b"   # Token 2
@@ -21,7 +20,7 @@ ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
 
 USER_DB = {}
 VALID_LINKS = {}
-BOT_STATUS = {"is_active": True}  # Trạng thái toàn hệ thống bot
+BOT_STATUS = {"is_active": True}
 
 # --- CẤU HÌNH HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
@@ -40,8 +39,9 @@ HTML_TEMPLATE = """
 <head><meta charset="UTF-8"><title>Vượt Link Nhận Mã</title></head>
 <body style="background:#0f172a; color:#fff; text-align:center; padding:50px; font-family:sans-serif;">
     <div style="background:#1e293b; padding:30px; border-radius:12px; display:inline-block;">
-        <h2>Mã nhận thưởng</h2>
-        <div style="background:#0f172a; border:2px dashed #38bdf8; padding:15px; font-size:24px; color:#4ade80;">{{ key }}</div>
+        <h2>Mã nhận thưởng của bạn</h2>
+        <div style="background:#0f172a; border:2px dashed #38bdf8; padding:15px; font-size:24px; color:#4ade80; margin: 20px 0;">{{ key }}</div>
+        <p style="color: #94a3b8; font-size: 14px;">Hãy copy mã này và dán về bot Telegram để nhận thưởng nhé!</p>
     </div>
 </body>
 </html>
@@ -94,7 +94,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not BOT_STATUS["is_active"] and user_id != ADMIN_VIP_ID:
         if update.message:
-            await update.message.reply_text("🛠️ **Hệ thống đang bảo trì tạm thời!** Vui lòng quay lại sau.", parse_mode="Markdown")
+            await update.message.reply_text("🛠️ **Hệ thống đang bảo trì tạm thời!**", parse_mode="Markdown")
         return
 
     user = get_user(user_id)
@@ -118,7 +118,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu":
         await start(update, context)
 
-    # --- TÍNH NĂNG NÔNG TRẠI ---
+    # --- TÍNH NĂNG NÔNG TRẠI (FIX ĐÃ BẤM ĐƯỢC) ---
     elif data == "play_farm":
         farm = user["farm"]
         now = datetime.now()
@@ -133,9 +133,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             seed_info = SEEDS_CONFIG[farm["seed_id"]]
             if now >= farm["ripe_time"]:
-                text = f"🌾 **NÔNG TRẠI TK**\n\nCây **{seed_info['name']}** của bạn đã chín tới và sẵn sàng thu hoạch!"
+                text = f"🌾 **NÔNG TRẠI TK**\n\nCây **{seed_info['name']}** đã chín và sẵn sàng thu hoạch!"
                 kb = [
-                    [InlineKeyboardButton("🧺 Thu hoạch ngay (+{}đ)".format(seed_info['reward']), callback_data="harvest_plant")],
+                    [InlineKeyboardButton(f"🧺 Thu hoạch ngay (+{seed_info['reward']}đ)", callback_data="harvest_plant")],
                     [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
                 ]
             else:
@@ -165,6 +165,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ripe_time": now + timedelta(minutes=seed_info["grow_minutes"])
         }
         await query.answer(f"🌱 Đã trồng thành công {seed_info['name']}!", show_alert=True)
+        # Load lại giao diện nông trại ngay lập tức
         await button_handler(update, context)
 
     elif data == "harvest_plant":
@@ -178,8 +179,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Cây chưa chín, chưa thể thu hoạch!", show_alert=True)
             return
         
-        user["balance"] += seed_info["reward"]
         reward_amt = seed_info["reward"]
+        user["balance"] += reward_amt
         user["farm"] = {"seed_id": None, "plant_time": None, "ripe_time": None}
         await query.answer(f"🎉 Thu hoạch thành công! Nhận +{reward_amt}đ", show_alert=True)
         await button_handler(update, context)
@@ -193,8 +194,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💵 Số dư: **{user['balance']:,.0f} VNĐ**\n"
             f"👑 Trạng thái VIP: **{vip_status}**\n"
             f"🏦 Tài khoản ngân hàng: {bank_text}\n"
-            f"🔄 Số lần đổi ngân hàng còn lại: **{user['bank_changes_left']}/3**\n\n"
-            f"⚠️ *Lưu ý: Tối thiểu rút 100.000đ và chỉ đổi ngân hàng tối đa 3 lần.*"
+            f"🔄 Số lần đổi ngân hàng còn lại: **{user['bank_changes_left']}/3**"
         )
         kb = [
             [InlineKeyboardButton("🔗 Liên kết / Đổi ngân hàng", callback_data="link_bank_prompt")],
@@ -205,32 +205,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "link_bank_prompt":
         if user["bank_changes_left"] <= 0:
-            await query.answer("❌ Bạn đã hết lượt đổi ngân hàng (tối đa 3 lần)!", show_alert=True)
+            await query.answer("❌ Bạn đã hết lượt đổi ngân hàng!", show_alert=True)
             return
         context.user_data["waiting_for_bank"] = True
         await query.edit_message_text(
-            text=f"🏦 **LIÊN KẾT / ĐỔI NGÂN HÀNG**\n\n"
-                 f"Số lần đổi còn lại: **{user['bank_changes_left']}**\n\n"
-                 f"Vui lòng nhập thông tin theo cú pháp:\n`TênNgânHàng - SốTàiKhoản - TênNgườiNhận`\n\n"
-                 f"*(Ví dụ: Vietcombank - 10672819 - NGUYEN BAO YEN)*",
+            text="🏦 **LIÊN KẾT / ĐỔI NGÂN HÀNG**\n\nNhập theo cú pháp:\n`TênNgânHàng - SốTàiKhoản - TênNgườiNhận`",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Ví", callback_data="my_wallet")]]),
             parse_mode="Markdown"
         )
 
     elif data == "withdraw_menu":
         if not user["bank_info"]:
-            await query.answer("❌ Bạn chưa liên kết tài khoản ngân hàng trong mục 'Ví của tôi'!", show_alert=True)
+            await query.answer("❌ Bạn chưa liên kết ngân hàng!", show_alert=True)
             return
         context.user_data["waiting_for_withdraw"] = True
         await query.edit_message_text(
-            text=f"💸 **RÚT TIỀN**\n🏦 TK nhận: `{user['bank_info']}`\n⚠️ *Tối thiểu rút: **100.000 VNĐ***\n\nNhập số tiền cần rút:",
+            text=f"💸 **RÚT TIỀN**\n🏦 TK: `{user['bank_info']}`\n\nNhập số tiền cần rút (Tối thiểu 100.000đ):",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Ví", callback_data="my_wallet")]]),
             parse_mode="Markdown"
         )
 
+    # --- VƯỢT LINK (FIX LỖI MẤT KẾT NỐI / DỰ PHÒNG MÃ) ---
     elif data == "get_earn_link":
         if user["links_today"] >= 4:
-            await query.answer("❌ Bạn đã đạt giới hạn vượt link tối đa 4 lần trong ngày hôm nay!", show_alert=True)
+            await query.answer("❌ Bạn đã đạt giới hạn 4 lần vượt link trong ngày!", show_alert=True)
             return
 
         current_attempt = user["links_today"]
@@ -239,8 +237,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         destination = "https://bot-link-vuot.onrender.com/earn"
         short_url = shorten_link_link4m(destination, chosen_token)
+        
+        # Fallback tự động tạo mã trực tiếp nếu link rút gọn gặp sự cố
         if not short_url:
-            short_url = destination
+            fallback_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            VALID_LINKS[fallback_code] = True
+            await query.edit_message_text(
+                f"⚠️ Hệ thống rút gọn đang bận. Đây là mã dự phòng của bạn:\n\n`{fallback_code}`\n\n(Hãy copy mã này và bấm Nhập Mã)",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Nhập Mã", callback_data="input_earn_code")], [InlineKeyboardButton("« Quay lại", callback_data="menu")]]),
+                parse_mode="Markdown"
+            )
+            return
 
         keyboard = [
             [InlineKeyboardButton(f"🌐 Mở Link (Lượt {current_attempt + 1}/4)", url=short_url)],
@@ -248,8 +255,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("« Quay lại", callback_data="menu")]
         ]
         await query.edit_message_text(
-            f"🔗 **Hệ thống Link Kiếm Tiền (Lượt {current_attempt + 1}/4)**\n"
-            f"Bấm vào link bên dưới để vượt link lấy mã:", 
+            f"🔗 **Hệ thống Link Kiếm Tiền (Lượt {current_attempt + 1}/4)**\nBấm vào link để lấy mã vượt:", 
             reply_markup=InlineKeyboardMarkup(keyboard), 
             parse_mode="Markdown"
         )
@@ -258,7 +264,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_code"] = True
         await query.edit_message_text("✍️ Gửi mã code vào khung chat:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]))
 
-    # --- DÒ MÌN 3x3 (Ô 1-4 random tỷ lệ, ô 5-8 chắc chắn nổ 0%) ---
+    # --- DÒ MÌN 3x3 (FIX TỶ LỆ CHUẨN XÁC) ---
     elif data == "play_mine":
         await query.edit_message_text(
             "💣 **Dò Mìn · Chọn mức cược:**",
@@ -273,7 +279,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("mine_bet_"):
         bet = int(data.split("_")[2])
         if user["balance"] < bet:
-            await query.answer("❌ Số dư không đủ! Hãy đi kiếm tiền trước nhé.", show_alert=True)
+            await query.answer("❌ Số dư không đủ!", show_alert=True)
             return
         user["balance"] -= bet
         
@@ -305,22 +311,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ô này đã mở rồi!", show_alert=True)
             return
 
-        current_step = game["opened"] + 1  # Thứ tự mở từ 1 đến 8
+        # Tính toán chuẩn xác bước hiện tại dựa trên số ô 💎 đã mở thực tế
+        opened_count = sum(1 for cell in game["grid"] if cell == "💎")
+        current_step = opened_count + 1
 
-        # Cài đặt tỷ lệ an toàn chuẩn xác theo yêu cầu
         if user["is_vip"]:
             safe_chance = 100.0
         else:
             if current_step == 1:
-                safe_chance = 60.0    # Ô 1: An toàn 60%
+                safe_chance = 50.0    # Ô 1: 50%
             elif current_step == 2:
-                safe_chance = 20.0    # Ô 2: An toàn 20%
+                safe_chance = 25.0    # Ô 2: 25%
             elif current_step == 3:
-                safe_chance = 10.0    # Ô 3: An toàn 10%
+                safe_chance = 12.0    # Ô 3: 12%
             elif current_step == 4:
-                safe_chance = 8.9     # Ô 4: An toàn 8.9%
+                safe_chance = 5.0     # Ô 4: 5%
             else:
-                safe_chance = 0.0     # Ô 5, 6, 7, 8: 0% an toàn (Chắc chắn nổ)
+                safe_chance = 0.0     # Từ ô thứ 5 trở đi chắc chắn nổ (0%)
 
         rand_val = random.uniform(0, 100)
         is_safe = (rand_val < safe_chance)
@@ -395,15 +402,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             user["balance"] -= amt
             await update.message.reply_text(
-                f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n"
-                f"🏦 TK nhận: `{user['bank_info']}`\n\n"
-                f"⏳ *Bạn có thể phải chờ khoảng 1-2 tuần để bên mình kiểm tra xem đúng số TK ko để xử lý lệnh rút.*", 
+                f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n🏦 TK nhận: `{user['bank_info']}`", 
                 reply_markup=get_main_menu(user["balance"]), 
                 parse_mode="Markdown"
             )
         except:
-            await update.message.reply_text("❌ Định dạng số tiền không hợp lệ!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_code"):
-        co
+            await update.message
