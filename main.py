@@ -11,10 +11,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- CẤU HÌNH API & LINK4M TOKEN ---
 TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
 
-# 2 Token Link4M của bạn
+# 2 Token Link4M của bạn (2 lượt đầu dùng token 1, 2 lượt sau dùng token 2)
 LINK4M_TOKENS = [
-    "68a76c1354de3f0da567ca17",  # Token 1 (dùng cho 2 lượt đầu)
-    "6a7e4f3993203b217d199b6b"   # Token 2 (dùng cho 2 lượt sau)
+    "68a76c1354de3f0da567ca17",  # Token 1
+    "6a7e4f3993203b217d199b6b"   # Token 2
 ]
 
 ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
@@ -57,7 +57,7 @@ def get_user(user_id):
     now = datetime.now()
     if user_id not in USER_DB:
         USER_DB[user_id] = {
-            "balance": 100.0, # Tặng sẵn 100đ để test nông trại
+            "balance": 100.0, 
             "is_vip": False, 
             "links_today": 0, 
             "last_link_date": now.date(), 
@@ -118,7 +118,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu":
         await start(update, context)
 
-    # --- TÍNH NĂNG NÔNG TRẠI ---
+    # --- TÍNH NĂNG NÔNG TRẠI (ĐÃ FIX LỖI KHÔNG HIỂN THỊ) ---
     elif data == "play_farm":
         farm = user["farm"]
         now = datetime.now()
@@ -140,6 +140,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]
             else:
                 remaining = int((farm["ripe_time"] - now).total_seconds())
+                if remaining < 0:
+                    remaining = 0
                 mins, secs = divmod(remaining, 60)
                 text = f"🌾 **NÔNG TRẠI TK**\n\nĐang trồng: **{seed_info['name']}**\n⏳ Thời gian thu hoạch còn lại: **{mins} phút {secs} giây**"
                 kb = [
@@ -163,7 +165,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ripe_time": now + timedelta(minutes=seed_info["grow_minutes"])
         }
         await query.answer(f"🌱 Đã trồng thành công {seed_info['name']}!", show_alert=True)
-        # Chuyển về giao diện nông trại sau khi trồng
+        # Gọi lại giao diện nông trại để cập nhật trạng thái ngay lập tức
         await button_handler(update, context)
 
     elif data == "harvest_plant":
@@ -257,7 +259,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_code"] = True
         await query.edit_message_text("✍️ Gửi mã code vào khung chat:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]))
 
-    # --- DÒ MÌN 3x3 ---
+    # --- DÒ MÌN 3x3 (Tỷ lệ an toàn chuẩn xác theo yêu cầu) ---
     elif data == "play_mine":
         await query.edit_message_text(
             "💣 **Dò Mìn · Chọn mức cược:**",
@@ -276,13 +278,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         user["balance"] -= bet
         
-        safe_count = random.randint(3, 5)
         user["mine_game"] = {
             "bet": bet, 
             "opened": 0, 
             "multiplier": 1.0, 
-            "grid": ["?"] * 9,
-            "safe_clicks_left": safe_count
+            "grid": ["?"] * 9
         }
         
         kb = [
@@ -306,20 +306,40 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ô này đã mở rồi!", show_alert=True)
             return
 
-        if user["is_vip"]:
-            is_exploded = False 
-        else:
-            if game["safe_clicks_left"] > 0:
-                game["safe_clicks_left"] -= 1
-                is_exploded = False
-            else:
-                if game["opened"] == 7:  
-                    is_exploded = (random.random() < 0.999)
-                else:
-                    is_exploded = (random.randint(1, 8) == 1)
+        current_step = game["opened"] + 1  # 1 đến 8
 
-        if is_exploded:
+        if user["is_vip"]:
+            safe_chance = 100.0
+        else:
+            if current_step == 1:
+                safe_chance = 60.0    # Ô 1: 60%
+            elif current_step == 2:
+                safe_chance = 20.0    # Ô 2: 20%
+            elif current_step == 3:
+                safe_chance = 10.0    # Ô 3: 10%
+            elif current_step == 4:
+                safe_chance = 8.9     # Ô 4: 8.9%
+            elif current_step == 5:
+                safe_chance = 0.8     # Ô 5: 0.8%
+            elif current_step == 6:
+                safe_chance = 0.6     # Ô 6: 0.6%
+            elif current_step == 7:
+                safe_chance = 0.4     # Ô 7: 0.4%
+            elif current_step == 8:
+                safe_chance = 0.1     # Ô 8: 0.1%
+            else:
+                safe_chance = 0.0
+
+        rand_val = random.uniform(0, 100)
+        is_safe = (rand_val < safe_chance)
+
+        if not is_safe:
             game["grid"][idx] = "💥"
+            for i in range(9):
+                if game["grid"][i] == "?":
+                    game["grid"][i] = "💎" if random.random() > 0.4 else "💥"
+            game["grid"][idx] = "💥"
+            
             del user["mine_game"]
             kb = [
                 [InlineKeyboardButton(game["grid"][0], callback_data="none"), InlineKeyboardButton(game["grid"][1], callback_data="none"), InlineKeyboardButton(game["grid"][2], callback_data="none")],
@@ -337,7 +357,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if game["opened"] >= 8:
                 user["balance"] += prize
                 del user["mine_game"]
-                await query.edit_message_text(f"🏆 **Thắng lớn! Vượt 8 ô kim cương nhận +{prize:,.0f}đ**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="menu")]]))
+                await query.edit_message_text(f"🏆 **Thắng cực phẩm! Vượt hết 8 ô kim cương nhận +{prize:,.0f}đ**", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="menu")]]))
             else:
                 kb = [
                     [InlineKeyboardButton(game["grid"][0], callback_data="mine_pick_0"), InlineKeyboardButton(game["grid"][1], callback_data="mine_pick_1"), InlineKeyboardButton(game["grid"][2], callback_data="mine_pick_2")],
@@ -386,21 +406,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n"
                 f"🏦 TK nhận: `{user['bank_info']}`\n\n"
                 f"⏳ *Bạn có thể phải chờ khoảng 1-2 tuần để bên mình kiểm tra xem đúng số TK ko để xử lý lệnh rút.*", 
-                reply_markup=get_main_menu(user["balance"]), 
-                parse_mode="Markdown"
-            )
-        except:
-            await update.message.reply_text("❌ Định dạng số tiền không hợp lệ!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_code"):
-        context.user_data["waiting_for_code"] = False
-        
-        # --- Bật/Tắt Bot qua mã 'offbot' ---
-        if text.lower() == "offbot":
-            if user_id != ADMIN_VIP_ID:
-                await update.message.reply_text("❌ Bạn không có quyền thực hiện thao tác này!", reply_markup=get_main_menu(user["balance"]))
-                return
-            
-            BOT_STATUS["is_active"] = not BOT_STATUS["is_active"]
-            status_text = "🟢 ĐÃ MỞ (ON) BOT" if BOT_STATUS["is_active"] else "🔴 Đ
+                reply_markup=get_main
