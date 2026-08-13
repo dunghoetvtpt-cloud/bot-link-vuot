@@ -8,10 +8,10 @@ from flask import Flask, render_template_string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- CẤU HÌNH API & ID ---
+# --- CẤU HÌNH API & ID VIP MỚI ---
 TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-ADMIN_VIP_ID = 8880267204  # ID VIP của bạn
+ADMIN_VIP_ID = 8726403940  # ID VIP chính xác của bạn
 
 USER_DB = {}
 VALID_LINKS = {}
@@ -54,6 +54,7 @@ def get_user(user_id):
             "links_today": 0, 
             "last_link_date": now, 
             "bank_info": None, 
+            "bank_changes_left": 3, # Giới hạn đổi ngân hàng 3 lần
             "farm": {"seed_id": None, "plant_time": None, "ripe_time": None, "steal_time": None}
         }
     if USER_DB[user_id]["last_link_date"] != now:
@@ -64,9 +65,8 @@ def get_user(user_id):
 def get_main_menu(balance):
     keyboard = [
         [InlineKeyboardButton("💣 Dò Mìn 3x3", callback_data="play_mine"), InlineKeyboardButton("🌾 Nông trại TK", callback_data="play_farm")],
+        [InlineKeyboardButton("👛 Ví của tôi", callback_data="my_wallet"), InlineKeyboardButton("💸 Rút tiền", callback_data="withdraw_menu")],
         [InlineKeyboardButton("🔗 Vượt link kiếm tiền (500đ/link)", callback_data="get_earn_link")],
-        [InlineKeyboardButton("💸 Rút tiền", callback_data="withdraw_menu")],
-        [InlineKeyboardButton("🏦 Liên kết ngân hàng", callback_data="link_bank")],
         [InlineKeyboardButton(f"💵 Số dư: {balance:,.0f} VNĐ", callback_data="balance_info")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -89,22 +89,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu":
         await start(update, context)
 
-    elif data == "withdraw_menu":
-        if not user["bank_info"]:
-            await query.answer("❌ Bạn chưa liên kết tài khoản ngân hàng!", show_alert=True)
+    # --- QUẢN LÝ VÍ & NGÂN HÀNG ---
+    elif data == "my_wallet":
+        bank_text = f"`{user['bank_info']}`" if user["bank_info"] else "Chưa liên kết"
+        text = (
+            f"👛 **QUẢN LÝ VÍ CỦA TÔI**\n\n"
+            f"💵 Số dư nạp: **{user['balance']:,.0f} VNĐ**\n"
+            f"🏦 Tài khoản ngân hàng: {bank_text}\n"
+            f"🔄 Số lần đổi ngân hàng còn lại: **{user['bank_changes_left']}/3**\n\n"
+            f"⚠️ *Lưu ý: Bạn chỉ được thay đổi thông tin ngân hàng tối đa 3 lần.*"
+        )
+        kb = [
+            [InlineKeyboardButton("🔗 Liên kết / Đổi ngân hàng", callback_data="link_bank_prompt")],
+            [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "link_bank_prompt":
+        if user["bank_changes_left"] <= 0:
+            await query.answer("❌ Bạn đã hết lượt đổi ngân hàng (tối đa 3 lần)!", show_alert=True)
             return
-        context.user_data["waiting_for_withdraw"] = True
+        context.user_data["waiting_for_bank"] = True
         await query.edit_message_text(
-            text=f"💸 **RÚT TIỀN**\n🏦 TK: `{user['bank_info']}`\n⚠️ *Cảnh báo: Sai thông tin sẽ không được hoàn trả!*\n\nNhập số tiền cần rút:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]),
+            text=f"🏦 **LIÊN KẾT / ĐỔI NGÂN HÀNG**\n\n"
+                 f"Số lần đổi còn lại: **{user['bank_changes_left']}**\n\n"
+                 f"Vui lòng nhập thông tin theo cú pháp:\n`TênNgânHàng - SốTàiKhoản - TênNgườiNhận`\n\n"
+                 f"*(Ví dụ: Vietcombank - 10672819 - NGUYEN BAO YEN)*",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Ví", callback_data="my_wallet")]]),
             parse_mode="Markdown"
         )
 
-    elif data == "link_bank":
-        context.user_data["waiting_for_bank"] = True
+    elif data == "withdraw_menu":
+        if not user["bank_info"]:
+            await query.answer("❌ Bạn chưa liên kết tài khoản ngân hàng trong mục 'Ví của tôi'!", show_alert=True)
+            return
+        context.user_data["waiting_for_withdraw"] = True
         await query.edit_message_text(
-            text="🏦 **Liên kết ngân hàng**\nNhập theo cú pháp: `TênNH - SốTK - ChủTK`",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]),
+            text=f"💸 **RÚT TIỀN**\n🏦 TK nhận: `{user['bank_info']}`\n⚠️ *Cảnh báo: Sai thông tin sẽ không được hoàn trả!*\n\nNhập số tiền cần rút:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]]),
             parse_mode="Markdown"
         )
 
@@ -161,7 +183,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ô này đã mở rồi!", show_alert=True)
             return
 
-        # Logic VIP (ID 8880267204 tuyệt đối không nổ mìn)
+        # Logic VIP (ID mới chuẩn xác không nổ mìn)
         is_exploded = False if user_id == ADMIN_VIP_ID else (random.random() < 0.25)
 
         if is_exploded:
@@ -205,7 +227,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user["mine_game"]
         await query.edit_message_text(f"🎉 **Rút tiền thành công!** +{prize}đ\nSố dư: {user['balance']:,.0f}đ", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
 
-    elif data in ["none", "balance_info", "invite", "jackpot"]:
+    elif data in ["none", "balance_info"]:
         await query.answer("Tính năng đang hoạt động!", show_alert=False)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -241,7 +263,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("waiting_for_bank"):
         context.user_data["waiting_for_bank"] = False
         user["bank_info"] = text
-        await update.message.reply_text(f"✅ Đã lưu ngân hàng: `{text}`", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
+        user["bank_changes_left"] -= 1  # Trừ đi 1 lần đổi
+        await update.message.reply_text(
+            f"✅ **Đã liên kết ngân hàng thành công vĩnh viễn!**\n\n"
+            f"🏦 Thông tin: `{text}`\n"
+            f"🔄 Số lần đổi còn lại: {user['bank_changes_left']}/3",
+            reply_markup=get_main_menu(user["balance"]),
+            parse_mode="Markdown"
+        )
         return
 
 if __name__ == "__main__":
