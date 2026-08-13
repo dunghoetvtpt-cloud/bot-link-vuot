@@ -10,13 +10,12 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TELEGRAM_BOT_TOKEN = "8880267204:AAG4JJRziEY5e66yzI2pas305ZX3rQCHEh8"
 LAYMA_TOKEN = "90a4fd0df685bd1dbb09e1455feb7609"
 
-# Lưu trữ Key tạm thời (Key hợp lệ sẽ được lưu vào đây để xác thực)
+# Lưu trữ Key tạm thời
 VALID_KEYS = set()
 
-# --- KHỞI TẠO FLASK (Dùng để tạo trang web nhận Key trên Render) ---
+# --- KHỞI TẠO FLASK ---
 app = Flask(__name__)
 
-# Giao diện trang web trên Render khi người dùng vượt link xong sẽ bấm vào để nhận Key
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -45,7 +44,6 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def home():
-    # Sinh ngẫu nhiên một mã Key xác nhận
     key = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     VALID_KEYS.add(key)
     return render_template_string(HTML_TEMPLATE, key=key)
@@ -57,10 +55,15 @@ def create_layma_link(target_url):
         api_url = f"https://api.layma.net/api/admin/shortlink/quicklink?tokenValue={LAYMA_TOKEN}&mat=json&url={target_url}"
         response = requests.get(api_url, timeout=10)
         data = response.json()
-        if data.get("status") == True:
-            return data.get("html")
+        
+        # Bắt mọi trường hợp thành công từ API Layma để lấy link rút gọn
+        if data.get("status") == "success" or data.get("status") is True or "data" in data or "shortUrl" in data or "html" in data:
+            short_url = data.get("shortUrl") or data.get("url") or data.get("html")
+            if short_url and str(short_url).startswith("http"):
+                return short_url
     except Exception as e:
         print(f"Lỗi Layma: {e}")
+    
     return target_url
 
 
@@ -80,10 +83,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "get_link":
-        # Domain trang web của bạn trên Render đã được cập nhật chính xác
         render_domain = "https://bot-link-vuot.onrender.com"
         
-        # Gọi API Layma để rút gọn link trang web của bạn
+        # Gọi API Layma để tạo link rút gọn
         short_url = create_layma_link(render_domain)
 
         keyboard = [
@@ -104,9 +106,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
     
-    # Kiểm tra xem người dùng có gửi đúng Key hợp lệ không
     if user_text in VALID_KEYS:
-        VALID_KEYS.remove(user_text) # Xóa key sau khi dùng để chống dùng lại
+        VALID_KEYS.remove(user_text)
         await update.message.reply_text(
             "✅ Xác nhận thành công! Dưới đây là file config của bạn:\n\n📂 `[Đường dẫn hoặc nội dung file config của bạn ở đây]`",
             parse_mode="Markdown"
@@ -121,13 +122,11 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 def main():
-    # Khởi động Flask Server chạy ngầm cho Render
     import threading
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
 
-    # Khởi động Bot Telegram
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -139,4 +138,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                              
