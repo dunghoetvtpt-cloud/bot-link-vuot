@@ -118,7 +118,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu":
         await start(update, context)
 
-    # --- TÍNH NĂNG NÔNG TRẠI (ĐÃ FIX LỖI KHÔNG HIỂN THỊ) ---
+    # --- TÍNH NĂNG NÔNG TRẠI ---
     elif data == "play_farm":
         farm = user["farm"]
         now = datetime.now()
@@ -165,7 +165,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ripe_time": now + timedelta(minutes=seed_info["grow_minutes"])
         }
         await query.answer(f"🌱 Đã trồng thành công {seed_info['name']}!", show_alert=True)
-        # Gọi lại giao diện nông trại để cập nhật trạng thái ngay lập tức
         await button_handler(update, context)
 
     elif data == "harvest_plant":
@@ -259,7 +258,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_code"] = True
         await query.edit_message_text("✍️ Gửi mã code vào khung chat:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]))
 
-    # --- DÒ MÌN 3x3 (Tỷ lệ an toàn chuẩn xác theo yêu cầu) ---
+    # --- DÒ MÌN 3x3 (Ô 1-4 random tỷ lệ, ô 5-8 chắc chắn nổ 0%) ---
     elif data == "play_mine":
         await query.edit_message_text(
             "💣 **Dò Mìn · Chọn mức cược:**",
@@ -306,29 +305,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ô này đã mở rồi!", show_alert=True)
             return
 
-        current_step = game["opened"] + 1  # 1 đến 8
+        current_step = game["opened"] + 1  # Thứ tự mở từ 1 đến 8
 
+        # Cài đặt tỷ lệ an toàn chuẩn xác theo yêu cầu
         if user["is_vip"]:
             safe_chance = 100.0
         else:
             if current_step == 1:
-                safe_chance = 60.0    # Ô 1: 60%
+                safe_chance = 60.0    # Ô 1: An toàn 60%
             elif current_step == 2:
-                safe_chance = 20.0    # Ô 2: 20%
+                safe_chance = 20.0    # Ô 2: An toàn 20%
             elif current_step == 3:
-                safe_chance = 10.0    # Ô 3: 10%
+                safe_chance = 10.0    # Ô 3: An toàn 10%
             elif current_step == 4:
-                safe_chance = 8.9     # Ô 4: 8.9%
-            elif current_step == 5:
-                safe_chance = 0.8     # Ô 5: 0.8%
-            elif current_step == 6:
-                safe_chance = 0.6     # Ô 6: 0.6%
-            elif current_step == 7:
-                safe_chance = 0.4     # Ô 7: 0.4%
-            elif current_step == 8:
-                safe_chance = 0.1     # Ô 8: 0.1%
+                safe_chance = 8.9     # Ô 4: An toàn 8.9%
             else:
-                safe_chance = 0.0
+                safe_chance = 0.0     # Ô 5, 6, 7, 8: 0% an toàn (Chắc chắn nổ)
 
         rand_val = random.uniform(0, 100)
         is_safe = (rand_val < safe_chance)
@@ -406,4 +398,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n"
                 f"🏦 TK nhận: `{user['bank_info']}`\n\n"
                 f"⏳ *Bạn có thể phải chờ khoảng 1-2 tuần để bên mình kiểm tra xem đúng số TK ko để xử lý lệnh rút.*", 
-                reply_markup=get_main
+                reply_markup=get_main_menu(user["balance"]), 
+                parse_mode="Markdown"
+            )
+        except:
+            await update.message.reply_text("❌ Định dạng số tiền không hợp lệ!", reply_markup=get_main_menu(user["balance"]))
+        return
+
+    if context.user_data.get("waiting_for_code"):
+        co
