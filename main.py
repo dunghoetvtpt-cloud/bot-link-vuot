@@ -8,23 +8,28 @@ from flask import Flask, render_template_string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- CẤU HÌNH API & MẬT KHẨU KÍCH HOẠT VIP QUA LINK ---
+# --- CẤU HÌNH API & LINK4M TOKEN ---
 TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
-LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-ADMIN_VIP_ID = 8726403940  # ID Admin chính của bạn để dùng lệnh bật/tắt bot
-VIP_ACTIVATION_SECRET = "kichhoatvip999"  # Mã bật/tắt trạng thái VIP qua link
+
+# 2 Token Link4M của bạn
+LINK4M_TOKENS = [
+    "68a76c1354de3f0da567ca17",  # Token 1 (dùng cho 2 lượt đầu)
+    "6a7e4f3993203b217d199b6b"   # Token 2 (dùng cho 2 lượt sau)
+]
+
+ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
 
 USER_DB = {}
 VALID_LINKS = {}
-BOT_STATUS = {"is_active": True}  # Trạng thái bật/tắt bot (True: Hoạt động, False: Đang tắt/bảo trì)
+BOT_STATUS = {"is_active": True}  # Trạng thái toàn hệ thống bot
 
 # --- CẤU HÌNH HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
-    1: {"name": "🌱 Mầm Đậu Xanh", "cost": 30, "grow_minutes": 1, "steal_minutes": 10, "reward": 35},
-    2: {"name": "🌽 Bắp Ngô Ngọt", "cost": 60, "grow_minutes": 3, "steal_minutes": 12, "reward": 70},
-    3: {"name": "🥔 Khoai Tây Vàng", "cost": 120, "grow_minutes": 7, "steal_minutes": 15, "reward": 140},
-    4: {"name": "🍓 Dâu Tây Đỏ", "cost": 250, "grow_minutes": 15, "steal_minutes": 18, "reward": 290},
-    5: {"name": "🍎 Táo Vàng Thần Tài", "cost": 500, "grow_minutes": 30, "steal_minutes": 20, "reward": 580}
+    1: {"name": "🌱 Mầm Đậu Xanh", "cost": 30, "grow_minutes": 1, "reward": 35},
+    2: {"name": "🌽 Bắp Ngô Ngọt", "cost": 60, "grow_minutes": 3, "reward": 70},
+    3: {"name": "🥔 Khoai Tây Vàng", "cost": 120, "grow_minutes": 7, "reward": 140},
+    4: {"name": "🍓 Dâu Tây Đỏ", "cost": 250, "grow_minutes": 15, "reward": 290},
+    5: {"name": "🍎 Táo Vàng Thần Tài", "cost": 500, "grow_minutes": 30, "reward": 580}
 }
 
 app = Flask(__name__)
@@ -49,21 +54,32 @@ def earn_page():
     return render_template_string(HTML_TEMPLATE, key=key)
 
 def get_user(user_id):
-    now = datetime.now().date()
+    now = datetime.now()
     if user_id not in USER_DB:
         USER_DB[user_id] = {
-            "balance": 0.0, 
+            "balance": 100.0, # Tặng sẵn 100đ để test nông trại
             "is_vip": False, 
             "links_today": 0, 
-            "last_link_date": now, 
+            "last_link_date": now.date(), 
             "bank_info": None, 
             "bank_changes_left": 3, 
-            "farm": {"seed_id": None, "plant_time": None, "ripe_time": None, "steal_time": None}
+            "farm": {"seed_id": None, "plant_time": None, "ripe_time": None}
         }
-    if USER_DB[user_id]["last_link_date"] != now:
+    if USER_DB[user_id]["last_link_date"] != now.date():
         USER_DB[user_id]["links_today"] = 0
-        USER_DB[user_id]["last_link_date"] = now
+        USER_DB[user_id]["last_link_date"] = now.date()
     return USER_DB[user_id]
+
+def shorten_link_link4m(destination_url, api_token):
+    try:
+        api_url = f"https://link4m.co/api-shorten/v2?api={api_token}&url={destination_url}"
+        response = requests.get(api_url, timeout=10)
+        result = response.json()
+        if result.get("status") == 'success':
+            return result.get("shortenedUrl")
+    except Exception as e:
+        print(f"Lỗi rút gọn link: {e}")
+    return None
 
 def get_main_menu(balance):
     keyboard = [
@@ -74,22 +90,8 @@ def get_main_menu(balance):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- CÁC LỆNH BẬT / TẮT BOT DÀNH CHO ADMIN ---
-async def offbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_VIP_ID:
-        return
-    BOT_STATUS["is_active"] = False
-    await update.message.reply_text("🔴 **Đã TẮT (Off) bot thành công!** Bot tạm thời không tiếp nhận yêu cầu từ người dùng.", parse_mode="Markdown")
-
-async def onbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_VIP_ID:
-        return
-    BOT_STATUS["is_active"] = True
-    await update.message.reply_text("🟢 **Đã BẬT (On) bot thành công!** Hệ thống hoạt động bình thường trở lại.", parse_mode="Markdown")
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # Nếu bot đang tắt và người dùng không phải Admin thì chặn
     if not BOT_STATUS["is_active"] and user_id != ADMIN_VIP_ID:
         if update.message:
             await update.message.reply_text("🛠️ **Hệ thống đang bảo trì tạm thời!** Vui lòng quay lại sau.", parse_mode="Markdown")
@@ -115,6 +117,71 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu":
         await start(update, context)
+
+    # --- TÍNH NĂNG NÔNG TRẠI ---
+    elif data == "play_farm":
+        farm = user["farm"]
+        now = datetime.now()
+        
+        if farm["seed_id"] is None:
+            text = "🌾 **NÔNG TRẠI TK**\n\nĐất đang trống. Hãy chọn hạt giống để trồng:"
+            kb = []
+            for s_id, info in SEEDS_CONFIG.items():
+                kb.append([InlineKeyboardButton(f"Trồng {info['name']} (Giá: {info['cost']}đ)", callback_data=f"plant_{s_id}")])
+            kb.append([InlineKeyboardButton("« Quay lại Menu", callback_data="menu")])
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        else:
+            seed_info = SEEDS_CONFIG[farm["seed_id"]]
+            if now >= farm["ripe_time"]:
+                text = f"🌾 **NÔNG TRẠI TK**\n\nCây **{seed_info['name']}** của bạn đã chín tới và sẵn sàng thu hoạch!"
+                kb = [
+                    [InlineKeyboardButton("🧺 Thu hoạch ngay (+{}đ)".format(seed_info['reward']), callback_data="harvest_plant")],
+                    [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
+                ]
+            else:
+                remaining = int((farm["ripe_time"] - now).total_seconds())
+                mins, secs = divmod(remaining, 60)
+                text = f"🌾 **NÔNG TRẠI TK**\n\nĐang trồng: **{seed_info['name']}**\n⏳ Thời gian thu hoạch còn lại: **{mins} phút {secs} giây**"
+                kb = [
+                    [InlineKeyboardButton("🔄 Làm mới trạng thái", callback_data="play_farm")],
+                    [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
+                ]
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data.startswith("plant_"):
+        seed_id = int(data.split("_")[1])
+        seed_info = SEEDS_CONFIG[seed_id]
+        if user["balance"] < seed_info["cost"]:
+            await query.answer("❌ Số dư không đủ để mua hạt giống này!", show_alert=True)
+            return
+        
+        user["balance"] -= seed_info["cost"]
+        now = datetime.now()
+        user["farm"] = {
+            "seed_id": seed_id,
+            "plant_time": now,
+            "ripe_time": now + timedelta(minutes=seed_info["grow_minutes"])
+        }
+        await query.answer(f"🌱 Đã trồng thành công {seed_info['name']}!", show_alert=True)
+        # Chuyển về giao diện nông trại sau khi trồng
+        await button_handler(update, context)
+
+    elif data == "harvest_plant":
+        farm = user["farm"]
+        if farm["seed_id"] is None:
+            await query.answer("Không có cây nào để thu hoạch!", show_alert=True)
+            return
+        seed_info = SEEDS_CONFIG[farm["seed_id"]]
+        now = datetime.now()
+        if now < farm["ripe_time"]:
+            await query.answer("Cây chưa chín, chưa thể thu hoạch!", show_alert=True)
+            return
+        
+        user["balance"] += seed_info["reward"]
+        reward_amt = seed_info["reward"]
+        user["farm"] = {"seed_id": None, "plant_time": None, "ripe_time": None}
+        await query.answer(f"🎉 Thu hoạch thành công! Nhận +{reward_amt}đ", show_alert=True)
+        await button_handler(update, context)
 
     # --- QUẢN LÝ VÍ & NGÂN HÀNG ---
     elif data == "my_wallet":
@@ -161,13 +228,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "get_earn_link":
-        domain = "https://bot-link-vuot.onrender.com/earn"
+        if user["links_today"] >= 4:
+            await query.answer("❌ Bạn đã đạt giới hạn vượt link tối đa 4 lần trong ngày hôm nay!", show_alert=True)
+            return
+
+        current_attempt = user["links_today"]
+        token_index = 0 if current_attempt < 2 else 1
+        chosen_token = LINK4M_TOKENS[token_index]
+
+        destination = "https://bot-link-vuot.onrender.com/earn"
+        short_url = shorten_link_link4m(destination, chosen_token)
+        if not short_url:
+            short_url = destination
+
         keyboard = [
-            [InlineKeyboardButton("🌐 Mở Link Nhận Mã", url=domain)],
+            [InlineKeyboardButton(f"🌐 Mở Link (Lượt {current_attempt + 1}/4)", url=short_url)],
             [InlineKeyboardButton("🔑 Nhập Mã", callback_data="input_earn_code")],
             [InlineKeyboardButton("« Quay lại", callback_data="menu")]
         ]
-        await query.edit_message_text("🔗 Bấm vào link để vượt và lấy mã dán vào bot:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(
+            f"🔗 **Hệ thống Link Kiếm Tiền (Lượt {current_attempt + 1}/4)**\n"
+            f"Bấm vào link bên dưới để vượt link lấy mã:", 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode="Markdown"
+        )
 
     elif data == "input_earn_code":
         context.user_data["waiting_for_code"] = True
@@ -312,51 +396,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("waiting_for_code"):
         context.user_data["waiting_for_code"] = False
         
-        # --- Bật/Tắt trạng thái VIP qua link ---
-        if text == VIP_ACTIVATION_SECRET:
-            user["is_vip"] = not user["is_vip"] 
-            status_str = "KÍCH HOẠT THÀNH CÔNG (Bất tử)" if user["is_vip"] else "ĐÃ TẮT VIP"
-            await update.message.reply_text(f"👑 Trạng thái VIP của bạn đã thay đổi: **{status_str}**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
-            return
-
-        # --- Nâng giá trị mã dungvip12 lên 10.000đ ---
-        if text.lower() == "dungvip12":
-            user["balance"] += 10000
-            await update.message.reply_text("👑 Nhập mã VIP `dungvip12` thành công! **+10.000 VNĐ**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
-            return
-
-        if text in VALID_LINKS:
-            del VALID_LINKS[text]
-            user["balance"] += 500
-            user["links_today"] += 1
-            await update.message.reply_text("✅ Nhận thưởng 500đ thành công!", reply_markup=get_main_menu(user["balance"]))
-        else:
-            await update.message.reply_text("❌ Mã không hợp lệ!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_bank"):
-        context.user_data["waiting_for_bank"] = False
-        user["bank_info"] = text
-        user["bank_changes_left"] -= 1  
-        await update.message.reply_text(
-            f"✅ **Đã liên kết ngân hàng thành công!**\n\n"
-            f"🏦 Thông tin: `{text}`\n"
-            f"🔄 Số lần đổi còn lại: {user['bank_changes_left']}/3",
-            reply_markup=get_main_menu(user["balance"]),
-            parse_mode="Markdown"
-        )
-        return
-
-if __name__ == "__main__":
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000), daemon=True).start()
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    # Đăng ký các lệnh
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("offbot", offbot_command))
-    application.add_handler(CommandHandler("onbot", onbot_command))
-    
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
-        
+        # --- Bật/Tắt Bot qua mã 'offbot' ---
+        if text.lower() == "offbot":
+            if user_id != ADMIN_VIP_ID:
+                await update.message.reply_text("❌ Bạn không có quyền thực hiện thao tác này!", reply_markup=get_main_menu(user["balance"]))
+                return
+            
+            BOT_STATUS["is_active"] = not BOT_STATUS["is_active"]
+            status_text = "🟢 ĐÃ MỞ (ON) BOT" if BOT_STATUS["is_active"] else "🔴 Đ
