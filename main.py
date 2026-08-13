@@ -46,27 +46,24 @@ def home():
     VALID_KEYS.add(key)
     return render_template_string(HTML_TEMPLATE, key=key)
 
-# --- HÀM RÚT GỌN LINK BẰNG LINK4M V2 ---
+# --- HÀM RÚT GỌN LINK BẰNG LINK4M V2 (Giống hệt đoạn code chuẩn của bạn) ---
 def create_link4m_link(target_url):
     try:
-        # Sử dụng đúng chuẩn API v2 của Link4m mà bạn cung cấp
         api_url = f"https://link4m.co/api-shorten/v2?api={LINK4M_API_TOKEN}&url={target_url}"
         response = requests.get(api_url, timeout=10)
-        data = response.json()
+        result = response.json()
         
-        # Kiểm tra kết quả trả về theo đúng chuẩn v2
-        if data.get("status") == "success":
-            short_url = data.get("shortenedUrl")
+        if result.get("status") != 'success':
+            print(f"Lỗi Link4m: {result.get('message')}")
+        else:
+            short_url = result.get("shortenedUrl")
             if short_url:
                 return short_url
-        else:
-            print(f"Lỗi từ API Link4m: {data.get('message')}")
     except Exception as e:
         print(f"Lỗi kết nối Link4m: {e}")
     
     return target_url
 
-# --- CÁC LỆNH CỦA BOT TELEGRAM ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔗 Lấy File Config (Vượt Link)", callback_data="get_link")]
@@ -83,8 +80,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "get_link":
         render_domain = "https://bot-link-vuot.onrender.com"
-        
-        # Gọi API tạo link rút gọn Link4m v2
         short_url = create_link4m_link(render_domain)
 
         keyboard = [
