@@ -54,15 +54,18 @@ def create_layma_link(target_url):
     try:
         api_url = f"https://api.layma.net/api/admin/shortlink/quicklink?tokenValue={LAYMA_TOKEN}&mat=json&url={target_url}"
         response = requests.get(api_url, timeout=10)
-        data = response.json()
         
-        # Bắt mọi trường hợp thành công từ API Layma để lấy link rút gọn
-        if data.get("status") == "success" or data.get("status") is True or "data" in data or "shortUrl" in data or "html" in data:
-            short_url = data.get("shortUrl") or data.get("url") or data.get("html")
+        # In kết quả thô ra log Render để kiểm tra nếu có lỗi
+        print(f"Phản hồi từ Layma: {response.text}")
+        
+        data = response.json()
+        if isinstance(data, dict):
+            # Lấy các trường dữ liệu phổ biến trả về link rút gọn
+            short_url = data.get("shortUrl") or data.get("url") or data.get("html") or data.get("link")
             if short_url and str(short_url).startswith("http"):
                 return short_url
     except Exception as e:
-        print(f"Lỗi Layma: {e}")
+        print(f"Lỗi kết nối Layma: {e}")
     
     return target_url
 
@@ -85,7 +88,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "get_link":
         render_domain = "https://bot-link-vuot.onrender.com"
         
-        # Gọi API Layma để tạo link rút gọn
+        # Gọi API Layma
         short_url = create_layma_link(render_domain)
 
         keyboard = [
@@ -138,4 +141,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                              
