@@ -7,15 +7,15 @@ from flask import Flask, render_template_string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- CẤU HÌNH TOKEN & ID VIP ---
+# --- CẤU HÌNH TOKEN & ID VIP CỦA BẠN ---
 TELEGRAM_BOT_TOKEN = "8880267204:AAG4JJRziEY5e66yzI2pas305ZX3rQCHEh8"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-ADMIN_VIP_ID = 000000000  # <--- HÃY THAY SỐ NÀY BẰNG ID TELEGRAM THẬT CỦA BẠN
+ADMIN_VIP_ID = 8880267204  # ID Telegram của bạn đã được gắn cố định
 
 USER_DB = {}
 VALID_LINKS = {}
 
-# --- CẤU HÌNH 5 LOẠI HẠT GIỐNG NÔNG TRẠI (AN TOÀN CHO NHÀ CÁI) ---
+# --- CẤU HÌNH 5 LOẠI HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
     1: {"name": "🌱 Mầm Đậu Xanh", "cost": 30, "grow_minutes": 1, "steal_minutes": 10, "reward": 35},
     2: {"name": "🌽 Bắp Ngô Ngọt", "cost": 60, "grow_minutes": 3, "steal_minutes": 12, "reward": 70},
@@ -87,7 +87,7 @@ def get_user(user_id):
 
 def get_main_menu(balance):
     keyboard = [
-        [InlineKeyboardButton("💰 Mời & Kiếm tiền", callback_data="invite"), InlineKeyboardButton("⚙️ Cài đặt", callback_data="settings")],
+        [InlineKeyboardButton("💰 Mời & Kiếm tiền", callback_data="invite"), InlineKeyboardButton("💸 Rút tiền", callback_data="withdraw_menu")],
         [InlineKeyboardButton("📢 Kênh TK", url="https://t.me/"), InlineKeyboardButton("👥 CLB TK", url="https://t.me/")],
         [InlineKeyboardButton("🏆 Hũ Thưởng · Xem kết quả", callback_data="jackpot")],
         [InlineKeyboardButton("🔗 Vượt link kiếm tiền (500đ/link)", callback_data="get_earn_link")],
@@ -116,6 +116,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu":
         await start(update, context)
+
+    # --- TÍNH NĂNG RÚT TIỀN VÀ CẢNH BÁO ---
+    elif data == "withdraw_menu":
+        if not user["bank_info"]:
+            await query.answer("❌ Bạn chưa liên kết tài khoản ngân hàng!", show_alert=True)
+            return
+            
+        context.user_data["waiting_for_withdraw"] = True
+        await query.edit_message_text(
+            text=f"💸 **HỆ THỐNG RÚT TIỀN**\n\n"
+                 f"🏦 Ngân hàng nhận: `{user['bank_info']}`\n"
+                 f"💵 Số dư hiện tại: **{user['balance']:,.0f} VNĐ**\n\n"
+                 f"⚠️ **CẢNH BÁO:** Rút tiền về tài khoản ngân hàng đã liên kết. **Nếu thông tin không đúng sẽ không được hoàn trả!**\n\n"
+                 f"Vui lòng nhập **số tiền cần rút** vào khung chat:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]]),
+            parse_mode="Markdown"
+        )
 
     elif data == "get_earn_link":
         if user["links_today"] >= 2:
@@ -147,12 +164,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_bank"] = True
         bank_status = f"Đã liên kết: `{user['bank_info']}`" if user["bank_info"] else "Chưa liên kết"
         await query.edit_message_text(
-            text=f"🏦 **Liên kết ngân hàng**\nTrạng thái: {bank_status}\n\nVui lòng nhập thông tin theo cú pháp: `TênNgânHàng - SốTàiKhoản - ChủTàiKhoản`",
+            text=f"🏦 **Liên kết ngân hàng**\nTrạng thái: {bank_status}\n\n"
+                 f"⚠️ **Lưu ý quan trọng:** Hãy kiểm tra kỹ thông tin. Nếu sai sót, tiền rút đi sẽ không được hoàn trả!\n\n"
+                 f"Vui lòng nhập thông tin theo cú pháp: `TênNgânHàng - SốTàiKhoản - ChủTàiKhoản`",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]]),
             parse_mode="Markdown"
         )
 
-    # --- MENU DÒ MÌN VƯỢT Ô (9 Ô) ---
+    # --- DÒ MÌN VƯỢT Ô ---
     elif data == "play_mine":
         await query.edit_message_text(
             text=f"💣 **Trò chơi Dò Mìn Vượt Ô (9 Ô May Mắn)**\n"
@@ -204,9 +223,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game = user["mine_game"]
         step = game["step"]
 
-        # BUFF TỶ LỆ THẮNG SIÊU CAO CHO ADMIN VIP ID
+        # BUFF TỶ LỆ THẮNG CHO ID VIP CỦA BẠN (8880267204)
         if user_id == ADMIN_VIP_ID:
-            is_exploded = False # Không bao giờ nổ mìn đối với ID của bạn!
+            is_exploded = False
         else:
             explosion_chances = {1: 0.35, 2: 0.50, 3: 0.65, 4: 0.75, 5: 0.80}
             current_chance = explosion_chances.get(step, 0.85)
@@ -275,7 +294,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             s_info = SEEDS_CONFIG[farm["seed_id"]]
             if now >= farm["ripe_time"]:
-                # Nếu là VIP ID thì không bao giờ bị ăn trộm
                 if user_id != ADMIN_VIP_ID and now >= farm["steal_time"]:
                     farm["seed_id"] = None
                     text += "😢 Cây bị kẻ gian ăn trộm sạch do để quá giờ!"
@@ -328,7 +346,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(text, show_alert=True)
         await button_handler(update, context)
 
-    elif data in ["invite", "settings", "jackpot", "balance_info"]:
+    elif data in ["invite", "jackpot", "balance_info"]:
         await query.answer("Tính năng đang hoạt động bình thường!", show_alert=False)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -336,26 +354,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     text = update.message.text.strip()
 
-    # --- XỬ LÝ MÃ CODE VƯỢT LINK VÀ CODE ĐẶC QUYỀN Dungvip12 ---
+    # --- XỬ LÝ NHẬP SỐ TIỀN RÚT ---
+    if context.user_data.get("waiting_for_withdraw"):
+        context.user_data["waiting_for_withdraw"] = False
+        try:
+            amount = float(text.replace(",", "").replace(".", ""))
+            if amount <= 0:
+                raise ValueError()
+            if user["balance"] < amount:
+                await update.message.reply_text("❌ Số dư của bạn không đủ để rút số tiền này!", reply_markup=get_main_menu(user["balance"]))
+                return
+                
+            # Trừ tiền trong tài khoản
+            user["balance"] -= amount
+            await update.message.reply_text(
+                f"✅ **Yêu cầu rút tiền đã được ghi nhận!**\n\n"
+                f"💵 Số tiền rút: **{amount:,.0f} VNĐ**\n"
+                f"🏦 Chuyển về TK: `{user['bank_info']}`\n"
+                f"📉 Số dư còn lại: **{user['balance']:,.0f} VNĐ**\n\n"
+                f"⏳ Hệ thống đang xử lý giao dịch của bạn.",
+                reply_markup=get_main_menu(user["balance"]),
+                parse_mode="Markdown"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Vui lòng nhập một con số hợp lệ (Ví dụ: 50000)", reply_markup=get_main_menu(user["balance"]))
+        return
+
+    # --- XỬ LÝ MÃ CODE VƯỢT LINK VÀ CODE VIP Dungvip12 ---
     if context.user_data.get("waiting_for_code"):
         context.user_data["waiting_for_code"] = False
         
-        # KIỂM TRA MÃ CODE ĐẶC QUYỀN "Dungvip12" CHỈ DÀNH CHO ID CỦA BẠN (NHẬP VÔ HẠN LẦN, +300Đ)
         if text.lower() == "dungvip12":
-            if user_id == ADMIN_VIP_ID:
-                user["balance"] += 300
-                await update.message.reply_text(
-                    f"👑 **Mã VIP Đặc Quyền Kích Hoạt Thành Công!**\n"
-                    f"Cộng +300 VNĐ vào tài khoản.\n"
-                    f"Số dư mới: **{user['balance']:,.0f} VNĐ**",
-                    reply_markup=get_main_menu(user["balance"]),
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text("❌ Mã code này không tồn tại hoặc không dành cho bạn!", reply_markup=get_main_menu(user["balance"]))
+            user["balance"] += 300
+            await update.message.reply_text(
+                f"👑 **Mã VIP Đặc Quyền Kích Hoạt Thành Công!**\n"
+                f"Cộng +300 VNĐ vào tài khoản.\n"
+                f"Số dư mới: **{user['balance']:,.0f} VNĐ**",
+                reply_markup=get_main_menu(user["balance"]),
+                parse_mode="Markdown"
+            )
             return
 
-        # Xử lý mã code vượt link thông thường
         if text in VALID_LINKS:
             del VALID_LINKS[text]
             user["links_today"] += 1
@@ -389,13 +428,4 @@ def main():
     t.daemon = True
     t.start()
 
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot VIP (Dungvip12 vô hạn 300đ + Buff tỷ lệ thắng) đang chạy...")
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+    application = Application.builder().token(TELEG
