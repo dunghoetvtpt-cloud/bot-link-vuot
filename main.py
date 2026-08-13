@@ -80,8 +80,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "get_link":
-        # Lấy domain trang web của bạn trên Render (thay link của bạn vào đây khi deploy lên Render)
-        render_domain = "https://ten-service-cua-ban.onrender.com"
+        # Domain trang web của bạn trên Render đã được cập nhật chính xác
+        render_domain = "https://bot-link-vuot.onrender.com"
         
         # Gọi API Layma để rút gọn link trang web của bạn
         short_url = create_layma_link(render_domain)
@@ -139,4 +139,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
+    
