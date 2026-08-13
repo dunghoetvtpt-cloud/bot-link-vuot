@@ -10,12 +10,12 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- CẤU HÌNH TOKEN & ID VIP CỦA BẠN ---
 TELEGRAM_BOT_TOKEN = "8880267204:AAG4JJRziEY5e66yzI2pas305ZX3rQCHEh8"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-ADMIN_VIP_ID = 8880267204  # ID Telegram của bạn đã được gắn cố định
+ADMIN_VIP_ID = 8880267204  # ID Telegram VIP của bạn
 
 USER_DB = {}
 VALID_LINKS = {}
 
-# --- CẤU HÌNH 5 LOẠI HẠT GIỐNG NÔNG TRẠI ---
+# --- CẤU HÌNH HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
     1: {"name": "🌱 Mầm Đậu Xanh", "cost": 30, "grow_minutes": 1, "steal_minutes": 10, "reward": 35},
     2: {"name": "🌽 Bắp Ngô Ngọt", "cost": 60, "grow_minutes": 3, "steal_minutes": 12, "reward": 70},
@@ -117,7 +117,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu":
         await start(update, context)
 
-    # --- TÍNH NĂNG RÚT TIỀN VÀ CẢNH BÁO ---
+    # --- RÚT TIỀN ---
     elif data == "withdraw_menu":
         if not user["bank_info"]:
             await query.answer("❌ Bạn chưa liên kết tài khoản ngân hàng!", show_alert=True)
@@ -171,16 +171,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # --- DÒ MÌN VƯỢT Ô ---
+    # --- MENU CHỌN MỨC CƯỢC DÒ MÌN ---
     elif data == "play_mine":
         await query.edit_message_text(
-            text=f"💣 **Trò chơi Dò Mìn Vượt Ô (9 Ô May Mắn)**\n"
-                 f"Số dư hiện tại: **{user['balance']:,.0f} VNĐ**\n\n"
-                 f"Hãy chọn mức cược khởi điểm của bạn:",
+            text=f"💣 **Dò Mìn · Chọn Mức Cược**\n"
+                 f"Số dư: **{user['balance']:,.0f} VNĐ**\n\n"
+                 f"Chọn mức cược bên dưới:",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Cược 200đ", callback_data="mine_bet_200"), InlineKeyboardButton("Cược 500đ", callback_data="mine_bet_500")],
                 [InlineKeyboardButton("Cược 1,000đ", callback_data="mine_bet_1000"), InlineKeyboardButton("Cược 2,000đ", callback_data="mine_bet_2000")],
-                [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
+                [InlineKeyboardButton("« Trang chủ", callback_data="menu")]
             ]),
             parse_mode="Markdown"
         )
@@ -192,92 +192,130 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         user["balance"] -= bet_amount
+        # Khởi tạo ván chơi dò mìn chuẩn 9 ô
         user["mine_game"] = {
             "bet": bet_amount,
-            "step": 1,
-            "current_prize": bet_amount * 2
+            "opened": 0,
+            "multiplier": 1.0,
+            "current_prize": bet_amount,
+            "grid": ["?"] * 9 # 9 ô hỏi chấm
         }
 
+        # Tạo bàn cược 3x3 với các nút bấm "❓"
         keyboard = [
-            [InlineKeyboardButton("🟦 Ô 1", callback_data="mine_pick_1"), InlineKeyboardButton("🟦 Ô 2", callback_data="mine_pick_2"), InlineKeyboardButton("🟦 Ô 3", callback_data="mine_pick_3")],
-            [InlineKeyboardButton("🟦 Ô 4", callback_data="mine_pick_4"), InlineKeyboardButton("🟦 Ô 5", callback_data="mine_pick_5"), InlineKeyboardButton("🟦 Ô 6", callback_data="mine_pick_6")],
-            [InlineKeyboardButton("🟦 Ô 7", callback_data="mine_pick_7"), InlineKeyboardButton("🟦 Ô 8", callback_data="mine_pick_8"), InlineKeyboardButton("🟦 Ô 9", callback_data="mine_pick_9")],
-            [InlineKeyboardButton("💰 Dừng lại & Rút tiền ngay", callback_data="mine_cashout")],
-            [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]
+            [InlineKeyboardButton("❓", callback_data="mine_pick_0"), InlineKeyboardButton("❓", callback_data="mine_pick_1"), InlineKeyboardButton("❓", callback_data="mine_pick_2")],
+            [InlineKeyboardButton("❓", callback_data="mine_pick_3"), InlineKeyboardButton("❓", callback_data="mine_pick_4"), InlineKeyboardButton("❓", callback_data="mine_pick_5")],
+            [InlineKeyboardButton("❓", callback_data="mine_pick_6"), InlineKeyboardButton("❓", callback_data="mine_pick_7"), InlineKeyboardButton("❓", callback_data="mine_pick_8")],
+            [InlineKeyboardButton("« Quay lại", callback_data="play_mine"), InlineKeyboardButton("🏠 Trang chủ", callback_data="menu")]
         ]
         
         await query.edit_message_text(
-            text=f"💣 **Đang chơi Dò Mìn (Cược: {bet_amount:,}đ)**\n"
-                 f"🎯 Bước hiện tại: **Ô số 1**\n"
-                 f"💵 Tiền thưởng nếu qua ô này: **{user['mine_game']['current_prize']:,}đ**\n\n"
-                 f"Hãy chọn 1 ô bất kỳ bên dưới:",
+            text=f"💣 **Dò Mìn · Đang chơi**\n\n"
+                 f"🪙 Cược: **{bet_amount:,} VNĐ**\n"
+                 f"Đã mở: **0 / 8 💎**\n"
+                 f"Hệ số hiện tại: **1.0x**\n"
+                 f"Rút được: **0 VNĐ**\n"
+                 f"Chạm ô để mở; trúng mìn thì mất ván.",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
 
+    # --- XỬ LÝ CHỌN Ô TRONG DÒ MÌN ---
     elif data.startswith("mine_pick_"):
         if "mine_game" not in user:
             await query.answer("❌ Ván chơi đã kết thúc, vui lòng bắt đầu lại!", show_alert=True)
             return
 
+        idx = int(data.split("_")[2])
         game = user["mine_game"]
-        step = game["step"]
 
-        # BUFF TỶ LỆ THẮNG CHO ID VIP CỦA BẠN (8880267204)
+        if game["grid"][idx] != "?":
+            await query.answer("⚠️ Ô này đã được mở rồi!", show_alert=True)
+            return
+
+        # KIỂM TRA TRÚNG MÌN (ID VIP 8880267204 KHÔNG BAO GIỜ NỔ MÌN)
         if user_id == ADMIN_VIP_ID:
             is_exploded = False
         else:
-            explosion_chances = {1: 0.35, 2: 0.50, 3: 0.65, 4: 0.75, 5: 0.80}
-            current_chance = explosion_chances.get(step, 0.85)
-            is_exploded = random.random() < current_chance
+            # Tỷ lệ nổ tăng dần theo số ô đã mở
+            chances = {0: 0.2, 1: 0.3, 2: 0.4, 3: 0.5, 4: 0.6, 5: 0.7, 6: 0.8, 7: 0.85}
+            is_exploded = random.random() < chances.get(game["opened"], 0.9)
 
         if is_exploded:
-            bet_lost = game["bet"]
+            game["grid"][idx] = "💥"
             del user["mine_game"]
+            
+            # Giao diện khi thua
+            kb = [
+                [InlineKeyboardButton("💥", callback_data="none"), InlineKeyboardButton("💎", callback_data="none"), InlineKeyboardButton("💎", callback_data="none")],
+                [InlineKeyboardButton("💎", callback_data="none"), InlineKeyboardButton("💥", callback_data="none"), InlineKeyboardButton("💎", callback_data="none")],
+                [InlineKeyboardButton("💎", callback_data="none"), InlineKeyboardButton("💎", callback_data="none"), InlineKeyboardButton("💥", callback_data="none")],
+                [InlineKeyboardButton("🔄 Chơi tiếp", callback_data="play_mine")],
+                [InlineKeyboardButton("« Quay lại", callback_data="play_mine"), InlineKeyboardButton("🏠 Trang chủ", callback_data="menu")]
+            ]
             await query.edit_message_text(
-                text=f"💥 **BÙM! ĐÃ DẪM PHẢI MÌN Ở BƯỚC {step}!**\nSố dư: **{user['balance']:,.0f} VNĐ**",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Chơi Lại", callback_data="play_mine")], [InlineKeyboardButton("« Quay lại Menu", callback_data="menu")]])
+                text=f"💣 **Dò Mìn · Kết thúc**\n\n"
+                     f"🪙 Cược: **{game['bet']:,} VNĐ**\n"
+                     f"Đã mở: **{game['opened']} / 8 💎**\n"
+                     f"💥 **Trúng mìn! Không trúng thưởng.**\n"
+                     f"Số dư: **{user['balance']:,.0f} VNĐ**",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown"
             )
         else:
-            game["step"] += 1
-            old_prize = game["current_prize"]
-            game["current_prize"] = int(old_prize * 1.6) 
-            
-            if game["step"] > 9:
-                user["balance"] += old_prize
-                won_amount = old_prize
+            game["opened"] += 1
+            game["multiplier"] = round(game["multiplier"] * 1.5, 2)
+            game["current_prize"] = int(game["bet"] * game["multiplier"])
+            game["grid"][idx] = "💎"
+
+            if game["opened"] >= 8:
+                # Thắng toàn bộ 8 ô
+                won = game["current_prize"]
+                user["balance"] += won
                 del user["mine_game"]
                 await query.edit_message_text(
-                    text=f"🏆 **THẦN KỲ! VƯỢT XUẤT SẮC CẢ 9 Ô AN TOÀN!**\nNhận: **+{won_amount:,} VNĐ**",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Về Menu", callback_data="menu")]])
+                    text=f"🏆 **THÀNH CÔNG! VƯỢT XUẤT SẮC 8 Ô KIM CƯƠNG!**\n\n"
+                         f"🎁 Nhận thưởng: **+{won:,} VNĐ**\n"
+                         f"Số dư mới: **{user['balance']:,.0f} VNĐ**",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Chơi Lại", callback_data="play_mine")], [InlineKeyboardButton("🏠 Trang chủ", callback_data="menu")]])
                 )
             else:
-                keyboard = [
-                    [InlineKeyboardButton("🟦 Ô", callback_data="mine_pick_A"), InlineKeyboardButton("🟦 Ô", callback_data="mine_pick_B"), InlineKeyboardButton("🟦 Ô", callback_data="mine_pick_C")],
-                    [InlineKeyboardButton("💰 Dừng lại & Rút tiền ngay ({:,}đ)".format(old_prize), callback_data="mine_cashout")],
-                    [InlineKeyboardButton("« Thoát", callback_data="menu")]
+                # Xây dựng bàn cược cập nhật trạng thái ô
+                row1 = [InlineKeyboardButton(game["grid"][0], callback_data="mine_pick_0"), InlineKeyboardButton(game["grid"][1], callback_data="mine_pick_1"), InlineKeyboardButton(game["grid"][2], callback_data="mine_pick_2")]
+                row2 = [InlineKeyboardButton(game["grid"][3], callback_data="mine_pick_3"), InlineKeyboardButton(game["grid"][4], callback_data="mine_pick_4"), InlineKeyboardButton(game["grid"][5], callback_data="mine_pick_5")]
+                row3 = [InlineKeyboardButton(game["grid"][6], callback_data="mine_pick_6"), InlineKeyboardButton(game["grid"][7], callback_data="mine_pick_7"), InlineKeyboardButton(game["grid"][8], callback_data="mine_pick_8")]
+                
+                kb = [
+                    row1, row2, row3,
+                    [InlineKeyboardButton(f"💰 Rút ngay ({game['current_prize']:,}đ)", callback_data="mine_cashout")],
+                    [InlineKeyboardButton("« Quay lại", callback_data="play_mine"), InlineKeyboardButton("🏠 Trang chủ", callback_data="menu")]
                 ]
                 await query.edit_message_text(
-                    text=f"✨ **An toàn! Đã vượt qua ô số {step}**\n"
-                         f"🎯 Ô tiếp theo: **{game['step']} / 9**\n"
-                         f"💵 Thưởng hiện tại: **{old_prize:,}đ**",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    text=f"💣 **Dò Mìn · Đang chơi**\n\n"
+                         f"🪙 Cược: **{game['bet']:,} VNĐ**\n"
+                         f"Đã mở: **{game['opened']} / 8 💎**\n"
+                         f"Hệ số hiện tại: **{game['multiplier']}x**\n"
+                         f"Rút được: **{game['current_prize']:,} VNĐ**\n"
+                         f"Chạm ô để mở tiếp!",
+                    reply_markup=InlineKeyboardMarkup(kb),
                     parse_mode="Markdown"
                 )
 
     elif data == "mine_cashout":
         if "mine_game" not in user:
-            await query.answer("❌ Không có ván chơi nào đang diễn ra!", show_alert=True)
+            await query.answer("❌ Không có ván chơi nào!", show_alert=True)
             return
 
         game = user["mine_game"]
-        reward = int(game["current_prize"] / 1.6) 
-        user["balance"] += reward
+        won = game["current_prize"]
+        user["balance"] += won
         del user["mine_game"]
 
         await query.edit_message_text(
-            text=f"🎉 **Rút tiền thành công!** +{reward:,} VNĐ\nSố dư: **{user['balance']:,.0f} VNĐ**",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💣 Chơi Lại", callback_data="play_mine")], [InlineKeyboardButton("« Về Menu", callback_data="menu")]])
+            text=f"🎉 **Rút tiền thưởng thành công!**\n\n"
+                 f"💵 Nhận được: **+{won:,} VNĐ**\n"
+                 f"Số dư ví: **{user['balance']:,.0f} VNĐ**",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💣 Chơi Lại", callback_data="play_mine")], [InlineKeyboardButton("🏠 Trang chủ", callback_data="menu")]])
         )
 
     # --- NÔNG TRẠI TK ---
@@ -346,7 +384,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(text, show_alert=True)
         await button_handler(update, context)
 
-    elif data in ["invite", "jackpot", "balance_info"]:
+    elif data in ["invite", "jackpot", "balance_info", "none"]:
         await query.answer("Tính năng đang hoạt động bình thường!", show_alert=False)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -365,67 +403,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Số dư của bạn không đủ để rút số tiền này!", reply_markup=get_main_menu(user["balance"]))
                 return
                 
-            # Trừ tiền trong tài khoản
             user["balance"] -= amount
             await update.message.reply_text(
                 f"✅ **Yêu cầu rút tiền đã được ghi nhận!**\n\n"
                 f"💵 Số tiền rút: **{amount:,.0f} VNĐ**\n"
-                f"🏦 Chuyển về TK: `{user['bank_info']}`\n"
-                f"📉 Số dư còn lại: **{user['balance']:,.0f} VNĐ**\n\n"
-                f"⏳ Hệ thống đang xử lý giao dịch của bạn.",
-                reply_markup=get_main_menu(user["balance"]),
-                parse_mode="Markdown"
-            )
-        except ValueError:
-            await update.message.reply_text("❌ Vui lòng nhập một con số hợp lệ (Ví dụ: 50000)", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    # --- XỬ LÝ MÃ CODE VƯỢT LINK VÀ CODE VIP Dungvip12 ---
-    if context.user_data.get("waiting_for_code"):
-        context.user_data["waiting_for_code"] = False
-        
-        if text.lower() == "dungvip12":
-            user["balance"] += 300
-            await update.message.reply_text(
-                f"👑 **Mã VIP Đặc Quyền Kích Hoạt Thành Công!**\n"
-                f"Cộng +300 VNĐ vào tài khoản.\n"
-                f"Số dư mới: **{user['balance']:,.0f} VNĐ**",
-                reply_markup=get_main_menu(user["balance"]),
-                parse_mode="Markdown"
-            )
-            return
-
-        if text in VALID_LINKS:
-            del VALID_LINKS[text]
-            user["links_today"] += 1
-            user["balance"] += 500
-            await update.message.reply_text(
-                f"✅ Nhận thưởng thành công! +500 VNĐ.\nSố dư: **{user['balance']:,.0f} VNĐ**",
-                reply_markup=get_main_menu(user["balance"]),
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("❌ Mã code không hợp lệ hoặc đã được sử dụng!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_bank"):
-        context.user_data["waiting_for_bank"] = False
-        user["bank_info"] = text
-        await update.message.reply_text(
-            f"✅ Liên kết ngân hàng thành công:\n`{text}`",
-            reply_markup=get_main_menu(user["balance"]),
-            parse_mode="Markdown"
-        )
-        return
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-def main():
-    import threading
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-    application = Application.builder().token(TELEG
+           
