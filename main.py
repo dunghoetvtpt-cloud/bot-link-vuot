@@ -8,8 +8,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 # --- CẤU HÌNH TOKEN ---
 TELEGRAM_BOT_TOKEN = "8880267204:AAG4JJRziEY5e66yzI2pas305ZX3rQCHEh8"
-# Thay token Link4m của bạn vào đây nếu cần (token dưới đây đang để mẫu)
-LINK4M_API_TOKEN = "YOUR_LINK4M_API_TOKEN" 
+LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 VALID_KEYS = set()
 
@@ -47,20 +46,23 @@ def home():
     VALID_KEYS.add(key)
     return render_template_string(HTML_TEMPLATE, key=key)
 
-# --- HÀM RÚT GỌN LINK BẰNG LINK4M ---
+# --- HÀM RÚT GỌN LINK BẰNG LINK4M V2 ---
 def create_link4m_link(target_url):
     try:
-        api_url = f"https://link4m.com/api?api={LINK4M_API_TOKEN}&url={target_url}"
+        # Sử dụng đúng chuẩn API v2 của Link4m mà bạn cung cấp
+        api_url = f"https://link4m.co/api-shorten/v2?api={LINK4M_API_TOKEN}&url={target_url}"
         response = requests.get(api_url, timeout=10)
         data = response.json()
         
-        # Link4m trả về status == "success" và có trường "shortenedUrl" hoặc "url"
+        # Kiểm tra kết quả trả về theo đúng chuẩn v2
         if data.get("status") == "success":
-            short_url = data.get("shortenedUrl") or data.get("url")
+            short_url = data.get("shortenedUrl")
             if short_url:
                 return short_url
+        else:
+            print(f"Lỗi từ API Link4m: {data.get('message')}")
     except Exception as e:
-        print(f"Lỗi Link4m: {e}")
+        print(f"Lỗi kết nối Link4m: {e}")
     
     return target_url
 
@@ -82,7 +84,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "get_link":
         render_domain = "https://bot-link-vuot.onrender.com"
         
-        # Gọi API rút gọn Link4m
+        # Gọi API tạo link rút gọn Link4m v2
         short_url = create_link4m_link(render_domain)
 
         keyboard = [
@@ -133,46 +135,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    reply_markup=reply_markup
-        )
-
-    elif query.data == "input_key":
-        await query.edit_message_text(
-            text="Hãy gửi mã Key bạn vừa lấy được từ trang web vào khung chat này để bot kiểm tra nhé!"
-        )
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
     
-    if user_text in VALID_KEYS:
-        VALID_KEYS.remove(user_text)
-        await update.message.reply_text(
-            "✅ Xác nhận thành công! Dưới đây là file config của bạn:\n\n📂 `[Đường dẫn hoặc nội dung file config của bạn ở đây]`",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text("❌ Mã Key không hợp lệ hoặc đã được sử dụng. Vui lòng lấy link mới!")
-
-
-# --- HÀM CHẠY ĐỒNG THỜI BOT VÀ WEB ---
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-def main():
-    import threading
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot đang chạy...")
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
