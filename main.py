@@ -10,14 +10,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # --- CẤU HÌNH API & LINK4M TOKEN ---
-TELEGRAM_BOT_TOKEN = "8687843640:AAH_tJ4UGiaBXv22O6szQT03HvAMmno8PQc"
+TELEGRAM_BOT_TOKEN = "8824407353:AAF-mYCW6kSq-9ixD4ce42W5SpXV2D4t9n8"
 
 LINK4M_TOKENS = [
     "68a76c1354de3f0da567ca17",  # Token 1 (Lượt 1, 2)
     "6a7e4f3993203b217d199b6b"   # Token 2 (Lượt 3, 4)
 ]
 
-ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
+ADMIN_VIP_ID = 8726403940  # ID Admin của bạn đã được cập nhật chính xác
 
 USER_DB = {}
 VALID_LINKS = {}
@@ -28,7 +28,7 @@ GIFTCODES = {
     "TET2026": {
         "reward": 5000,
         "max_uses": 20,
-        "used_by": []  # Danh sách các user_id đã nhập thành công
+        "used_by": []
     },
     "KIMKIEM5K": {
         "reward": 5000,
@@ -420,4 +420,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user["balance"] -= amt
             await update.message.reply_text(
                 f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n🏦 TK nhận: `{user['bank_info']}`", 
-                reply_markup
+                reply_markup=get_main_menu(us
