@@ -13,8 +13,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TELEGRAM_BOT_TOKEN = "8811492527:AAGWvExXz8RgZExtPdqfwOvaz0JSE7S56xQ"
 
 LINK4M_TOKENS = [
-    "68a76c1354de3f0da567ca17",  # Token 1
-    "6a7e4f3993203b217d199b6b"   # Token 2
+    "68a76c1354de3f0da567ca17",  # Token 1 (Lượt 1, 2)
+    "6a7e4f3993203b217d199b6b"   # Token 2 (Lượt 3, 4)
 ]
 
 ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
@@ -22,6 +22,20 @@ ADMIN_VIP_ID = 8726403940  # ID Admin của bạn
 USER_DB = {}
 VALID_LINKS = {}
 BOT_STATUS = {"is_active": True}
+
+# --- CẤU HÌNH HỆ THỐNG GIFTCODE (GIỚI HẠN 20 NGƯỜI, MỖI ID 1 LẦN, 5000Đ) ---
+GIFTCODES = {
+    "TET2026": {
+        "reward": 5000,
+        "max_uses": 20,
+        "used_by": []  # Danh sách các user_id đã nhập thành công
+    },
+    "KIMKIEM5K": {
+        "reward": 5000,
+        "max_uses": 20,
+        "used_by": []
+    }
+}
 
 # --- CẤU HÌNH HẠT GIỐNG NÔNG TRẠI ---
 SEEDS_CONFIG = {
@@ -73,7 +87,6 @@ def get_user(user_id):
 
 def shorten_link_link4m(destination_url, api_token):
     try:
-        # Chuẩn hóa urlencode giống cú pháp PHP của bạn
         long_url = quote(destination_url, safe='')
         api_url = f"https://link4m.co/api-shorten/v2?api={api_token}&url={long_url}"
         response = requests.get(api_url, timeout=10)
@@ -227,21 +240,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # --- VƯỢT LINK (Áp dụng đúng 2 Token Link4M phân phối theo lượt) ---
+    # --- VƯỢT LINK ---
     elif data == "get_earn_link":
         if user["links_today"] >= 4:
             await query.answer("❌ Bạn đã đạt giới hạn 4 lần vượt link trong ngày!", show_alert=True)
             return
 
         current_attempt = user["links_today"]
-        # 2 lượt đầu dùng token 1, 2 lượt sau dùng token 2
         token_index = 0 if current_attempt < 2 else 1
         chosen_token = LINK4M_TOKENS[token_index]
 
         destination = "https://bot-link-vuot.onrender.com/earn"
         short_url = shorten_link_link4m(destination, chosen_token)
         
-        # Fallback tự động tạo mã trực tiếp nếu server Link4M gặp sự cố
         if not short_url:
             fallback_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
             VALID_LINKS[fallback_code] = True
@@ -265,7 +276,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "input_earn_code":
         context.user_data["waiting_for_code"] = True
-        await query.edit_message_text("✍️ Gửi mã code vào khung chat:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]))
+        await query.edit_message_text("✍️ Gửi mã code hoặc giftcode vào khung chat:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Quay lại", callback_data="menu")]]))
 
     # --- DÒ MÌN 3x3 ---
     elif data == "play_mine":
@@ -321,15 +332,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_chance = 100.0
         else:
             if current_step == 1:
-                safe_chance = 50.0    # Ô 1: 50%
+                safe_chance = 50.0
             elif current_step == 2:
-                safe_chance = 25.0    # Ô 2: 25%
+                safe_chance = 25.0
             elif current_step == 3:
-                safe_chance = 12.0    # Ô 3: 12%
+                safe_chance = 12.0
             elif current_step == 4:
-                safe_chance = 5.0     # Ô 4: 5%
+                safe_chance = 5.0
             else:
-                safe_chance = 0.0     # Từ ô thứ 5 trở đi chắc chắn nổ (0%)
+                safe_chance = 0.0
 
         rand_val = random.uniform(0, 100)
         is_safe = (rand_val < safe_chance)
@@ -406,54 +417,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n🏦 TK nhận: `{user['bank_info']}`", 
                 reply_markup=get_main_menu(user["balance"]), 
-                parse_mode="Markdown"
-            )
-        except:
-            await update.message.reply_text("❌ Định dạng số tiền không hợp lệ!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_code"):
-        context.user_data["waiting_for_code"] = False
-        
-        if text.lower() == "offbot":
-            if user_id != ADMIN_VIP_ID:
-                await update.message.reply_text("❌ Bạn không có quyền thực hiện thao tác này!", reply_markup=get_main_menu(user["balance"]))
-                return
-            BOT_STATUS["is_active"] = not BOT_STATUS["is_active"]
-            status_text = "🟢 MỞ" if BOT_STATUS["is_active"] else "🔴 KHÓA"
-            await update.message.reply_text(f"⚙️ Trạng thái: **{status_text}**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
-            return
-
-        if text.lower() == "dungvip12":
-            user["balance"] += 10000
-            await update.message.reply_text("👑 Nhập mã VIP thành công! **+10.000 VNĐ**", reply_markup=get_main_menu(user["balance"]), parse_mode="Markdown")
-            return
-
-        if text in VALID_LINKS:
-            del VALID_LINKS[text]
-            user["balance"] += 500
-            user["links_today"] += 1
-            await update.message.reply_text(f"✅ Nhận thưởng 500đ thành công! (Lượt hôm nay: {user['links_today']}/4)", reply_markup=get_main_menu(user["balance"]))
-        else:
-            await update.message.reply_text("❌ Mã không hợp lệ hoặc đã được sử dụng!", reply_markup=get_main_menu(user["balance"]))
-        return
-
-    if context.user_data.get("waiting_for_bank"):
-        context.user_data["waiting_for_bank"] = False
-        user["bank_info"] = text
-        user["bank_changes_left"] -= 1  
-        await update.message.reply_text(
-            f"✅ **Đã liên kết ngân hàng thành công!**\n🏦 Thông tin: `{text}`",
-            reply_markup=get_main_menu(user["balance"]),
-            parse_mode="Markdown"
-        )
-        return
-
-if __name__ == "__main__":
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000), daemon=True).start()
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+                parse_mo
