@@ -10,7 +10,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # --- CẤU HÌNH API & LINK4M TOKEN ---
-TELEGRAM_BOT_TOKEN = "8811492527:AAGWvExXz8RgZExtPdqfwOvaz0JSE7S56xQ"
+TELEGRAM_BOT_TOKEN = "8687843640:AAH_tJ4UGiaBXv22O6szQT03HvAMmno8PQc"
 
 LINK4M_TOKENS = [
     "68a76c1354de3f0da567ca17",  # Token 1 (Lượt 1, 2)
@@ -61,6 +61,10 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
+
+@app.route('/')
+def home():
+    return "Bot is running!"
 
 @app.route('/earn')
 def earn_page():
@@ -416,5 +420,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user["balance"] -= amt
             await update.message.reply_text(
                 f"✅ **Đã tạo lệnh rút thành công {amt:,.0f}đ!**\n🏦 TK nhận: `{user['bank_info']}`", 
-                reply_markup=get_main_menu(user["balance"]), 
-                parse_mo
+                reply_markup
